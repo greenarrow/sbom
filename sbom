@@ -1,0 +1,191 @@
+#!/usr/bin/env python
+
+import sys
+import argparse
+
+SCHAR = """=-`:'"~^_*+#<>"""
+
+INDEX = "#"
+QUANTITY = "qty"
+
+
+def part_id(index):
+    d, m = divmod(index, 26)
+
+    if d > 0:
+        return part_id(d) + chr(65 + m)
+    else:
+        return chr(65 + m)
+
+
+def bom_read(stream):
+    bom = {}
+    line = True
+
+    while line:
+        line = stream.readline()
+
+        if not line.startswith('ECHO: "BOM:'):
+            continue
+
+        assert line.rstrip().endswith('"')
+
+        parts = [p for p in line.rstrip()[11:-1].split(":") if len(p)]
+
+        if "=" in parts[-1]:
+            namespace = tuple(parts[:-1])
+            parameters = dict(p.strip().split("=")
+                              for p in parts[-1].split(",") if len(p))
+        else:
+            namespace = tuple(parts)
+            parameters = {}
+
+        bom.setdefault(namespace, []).append(parameters)
+
+    return bom
+
+
+def bom_write_table(stream, bom, namespace):
+    parts = [tuple(i.iteritems()) for i in bom[namespace]]
+
+    columns = (INDEX,) + tuple(sorted(set(k for k in i for i in parts))) \
+              + (QUANTITY,)
+
+    tally = {}
+    for varient in set(parts):
+        tally[varient] = parts.count(varient)
+
+    widths = {}
+    for c in columns:
+        widths[c] = max(c in i and len(i[c]) for i in bom[namespace])
+        widths[c] = max(widths[c], len(c))
+
+    widths[INDEX] = max(len(part_id(len(set(parts)))), len(INDEX))
+
+    widths[QUANTITY] = max(len(str(i)) for i in tally.itervalues())
+    widths[QUANTITY] = max(widths[QUANTITY], len(QUANTITY))
+
+    for c in columns:
+        stream.write("=" * widths[c])
+        stream.write("  ")
+
+    stream.write("\n")
+
+    for c in columns:
+        stream.write(c.center(widths[c]))
+        stream.write("  ")
+
+    stream.write("\n")
+
+    for c in columns:
+        stream.write("=" * widths[c])
+        stream.write("  ")
+
+    stream.write("\n")
+
+    for index, varient in enumerate(set(parts)):
+        count = tally[varient]
+        varient = dict(varient)
+
+        for c in columns:
+            if c in varient:
+                stream.write(varient[c].ljust(widths[c]))
+            elif c == INDEX:
+                stream.write(part_id(index).ljust(widths[c]))
+            elif c == QUANTITY:
+                stream.write(str(count).ljust(widths[c]))
+            else:
+                stream.write("n/a".ljust(widths[c]))
+
+            stream.write("  ")
+
+        stream.write("\n")
+
+    for c in columns:
+        stream.write("=" * widths[c])
+        stream.write("  ")
+
+    stream.write("\n\n")
+
+
+def bom_write_doc(stream, bom, namespace=tuple()):
+    pos = len(namespace)
+
+    if pos > 0:
+        title = ":".join(namespace[pos - 1:])
+        stream.write(title)
+        stream.write("\n")
+        stream.write(SCHAR[pos - 1] * len(title))
+        stream.write("\n\n")
+
+    if namespace in bom:
+        bom_write_table(stream, bom, namespace)
+
+    keys = set(k[:pos + 1] for k in bom.iterkeys()
+               if k[:pos] == namespace and len(k) > pos)
+
+    for key in keys:
+        bom_write_doc(stream, bom, key)
+
+
+def bom_write_freecut(stream, bom, namespace, keys):
+    assert len(keys) == 2
+
+    for part in bom[namespace]:
+        stream.write(str(part[keys[0]]))
+        stream.write("\t")
+        stream.write(str(part[keys[1]]))
+        stream.write("\n")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="OpenSCAD Simple BOM.")
+
+    parser.add_argument("-f", "--filter",
+                        help="generate Freecut cutting list")
+
+    parser.add_argument("-c", "--freecad",
+                        action="store",
+                        default=False,
+                        help="generate Freecut cutting list")
+
+    parser.add_argument("input",
+                        nargs="+",
+                        default="-",
+                        help="one or more sbom files")
+
+    parser.add_argument("-o", "--output",
+                        help="write output to file")
+
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    if args.output is None:
+        output = sys.stdout
+    else:
+        output = open(args.output, "w")
+
+    for filename in args.input:
+        if filename == "-":
+            input = sys.stdin
+        else:
+            input = open(filename, "r")
+
+        bom = bom_read(input)
+
+        if args.filter is None:
+            filter = tuple()
+        else:
+            filter = tuple(args.filter.split(":"))
+
+        if args.freecad:
+            bom_write_freecut(output, bom, filter,
+                              tuple(args.freecad.split(":")))
+        else:
+            bom_write_doc(output, bom, filter)
+
+        input.close()
+
+    output.close()
