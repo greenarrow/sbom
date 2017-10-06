@@ -55,10 +55,29 @@ def bom_write_table(stream, bom, namespace):
     for varient in set(parts):
         tally[varient] = parts.count(varient)
 
+    aggregates = {}
+    for c in columns:
+        for p in bom[namespace]:
+            value = p.get(c)
+
+            if value is None:
+                continue
+
+            try:
+                aggregates[c] = aggregates.get(c, 0.0) + float(value)
+
+            except ValueError:
+                # skip non-numeric fields
+                continue
+
     widths = {}
     for c in columns:
         widths[c] = max(c in i and len(i[c]) for i in bom[namespace])
         widths[c] = max(widths[c], len(c))
+        a = aggregates.get(c)
+
+        if a is not None:
+            widths[c] = max(widths[c], len(str(a)))
 
     widths[INDEX] = max(len(part_id(len(set(parts)))), len(INDEX))
 
@@ -100,6 +119,27 @@ def bom_write_table(stream, bom, namespace):
             stream.write("  ")
 
         stream.write("\n")
+
+    for c in columns:
+        stream.write("=" * widths[c])
+        stream.write("  ")
+
+    stream.write("\n")
+    stream.write("T  ")
+
+    for c in columns:
+        if c == INDEX:
+            continue
+
+        value = aggregates.get(c)
+
+        if value is None:
+            value = ""
+
+        stream.write(str(value).ljust(widths[c]))
+        stream.write("  ")
+
+    stream.write("\n")
 
     for c in columns:
         stream.write("=" * widths[c])
