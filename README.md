@@ -50,6 +50,15 @@ SBOM do the counting for us.
 
 ## Using SBOM with OpenSCAD
 
-In OpenSCAD we can.. variables...
+In OpenSCAD we can generate **SBOM** lines:
 
     echo(str("BOM:hardware:bolt:size=M", size, ",length=", length));
+
+Then we can generate a BOM:
+
+    openscad -o /tmp/null.stl model.scad 2>&1 | sbom -
+
+Alternatively the output in the OpenSCAD console can be copied and pasted into
+a file then:
+
+    sbom myfile.txt
