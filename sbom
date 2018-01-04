@@ -34,8 +34,12 @@ def bom_read(stream):
 
         if "=" in parts[-1]:
             namespace = tuple(parts[:-1])
-            parameters = dict(p.strip().split("=")
-                              for p in parts[-1].split(",") if len(p))
+            try:
+                parameters = dict(p.strip().split("=")
+                                  for p in parts[-1].split(",") if len(p))
+            except ValueError:
+                sys.stderr.write("%s: invalid input\n" % line.rstrip())
+                sys.exit(1)
         else:
             namespace = tuple(parts)
             parameters = {}
